@@ -21,7 +21,7 @@ button {
     background-color: #ccc;
 }
 .calculated {
-    color: #00d;
+    color: blue;
 }
 .removed {
     color: var(--background)
@@ -66,13 +66,13 @@ pv = [i for i in range(9)]
 print(pv)
 show_indexes = False
 show_highlight = False
+selected = -1
 class cell(uix.Element):
-    selected = -1
     def __init__(self, id, value=None):
         super().__init__(id = str(id), value = value)
         self.possibles = pv.copy()
         self.calculated = False
-        with self.on("click",self.on_click).cls("cell selected" if cell.selected == self.id else "cell"):
+        with self.on("click",self.on_click).cls("cell selected" if selected == self.id else "cell"):
             self.render_numbers()
 
     def render_numbers(self):
@@ -93,15 +93,19 @@ class cell(uix.Element):
                     else:
                         text(value=str(i+1)).cls("celltext").cls("removed")
 
-    def on_click(self,ctx,id,value):    
+    def on_click(self,ctx,id,value):
+        global selected
         print(f"cell {self.id} clicked") 
         for i in range(9):
             if i in self.possibles:
-                print(f"btn-{i} enabled")
                 ctx.elements[f"btn-{i}"].set_attr("disabled",False)
             else:
                 ctx.elements[f"btn-{i}"].set_attr("disabled",True)      
         calc_possibilities(ctx, self.id)
+        if selected != -1:
+            ctx.elements[str(selected)].remove_class("selected")
+        selected = str(id)
+        ctx.elements[str(selected)].add_class("selected")
 
 def bigcell(index):
     with div():
@@ -117,67 +121,81 @@ def calc_possibilities(ctx,index):
     while len(dirty_cells) > 0:
         index = dirty_cells.pop()
         calc_possibilities_by_index(ctx, index)
+    while True:
+        for i in range(9):
+            ary = get_nearby_cells(i)
+            check_single_possibility(ctx, ary)
+            ary = get_row_cells(i)
+            check_single_possibility(ctx, ary)
+            ary = get_col_cells(i)
+            check_single_possibility(ctx, ary)
+        if len(dirty_cells) > 0:
+            while len(dirty_cells) > 0:
+                index = dirty_cells.pop()
+                calc_possibilities_by_index(ctx, index)
+        else:
+            break
 
+def remove_possibility_from_array(ctx, ary, index):
+    elm = ctx.elements[str(index)]
+    possibilty = elm.possibles[0]
+    for i in range(len(ary)):
+        elm2 = ctx.elements[str(ary[i])]
+        p = elm2.possibles
+        if possibilty in p:
+            p.remove(possibilty)
+            dirty_cells.append(ary[i])
+            if(len(p) == 1):
+                elm2.calculated = True
+            elm2.update(elm2.render_numbers)
+
+def calc_possibility_count_on_array_for_value(ctx, ary, value):
+    count = 0
+    index = -1
+    for i in range(len(ary)):
+        elm = ctx.elements[str(ary[i])]
+        if len(elm.possibles) != 1:
+            if value in elm.possibles:
+                count += 1
+                index = i
+    return count, index
+
+def check_single_possibility(ctx, ary):
+    for i in range(9):
+        count, index = calc_possibility_count_on_array_for_value(ctx, ary, i)
+        if count == 1:
+            print(f"Single possibility {i} found at {ary[index]}")
+            elm = ctx.elements[str(ary[index])]
+            if len(elm.possibles) != 1:
+                elm.possibles = [i]
+                elm.calculated = True
+                elm.update(elm.render_numbers)
+                dirty_cells.append(ary[index])
+
+def get_nearby_cells(index):
+    return [index * 9 + i for i in range(9)]
+def get_row_cells(index):
+    return [(index // 3) * 27 + (index % 3) * 3 + (i // 3) * 9 + i % 3 for i in range(9)]
+def get_col_cells(index):
+    return [(index // 3) * 9 + (index % 3) + (i // 3) * 27 + (i % 3) * 3 for i in range(9)]
 
 def calc_possibilities_by_index(ctx, index):
     global dirty_cells
     index = int(index)
     if index == -1:
         return
-    big_index = index // 9
-    row_index = (index % 9) // 3 + (big_index // 3) * 3
-    col_index = index % 3 + (big_index % 3) * 3
-    rows = []
-    cols = []
-    nearby = []
-    for i in range(9):
-        rows.append((row_index // 3) *27 + (row_index % 3) * 3 + (i // 3) * 9 + i % 3) 
-    for i in range(9):
-        cols.append((col_index // 3) * 9 + (col_index % 3) + (i // 3) * 27 + (i % 3) * 3)
-    for i in range(9):
-        nearby.append(big_index * 9 + i)
-
+    rows = get_row_cells((index % 9) // 3 + (index // 27) * 3)
+    cols = get_col_cells(index % 3 + ((index // 9) % 3) * 3)
+    nearby = get_nearby_cells(index // 9)
+    
     rows.remove(index)
     cols.remove(index)
     nearby.remove(index)
-    dirty_count = len(dirty_cells)
     elm = ctx.elements[str(index)]
     if len(elm.possibles) == 1:
-        val = elm.possibles[0]
-        for i in range(len(rows)):
-            p = ctx.elements[str(rows[i])].possibles
-            if val in p:
-                print(f"removing {val} from {rows[i]}")
-                p.remove(val)
-                if(len(p) == 1):
-                    dirty_cells.append(rows[i])
-                    ctx.elements[str(rows[i])].calculated = True
-                    
-        for i in range(len(cols)):
-            p = ctx.elements[str(cols[i])].possibles
-            if val in p:
-                p.remove(val)
-                if(len(p) == 1):
-                    dirty_cells.append(cols[i])
-                    ctx.elements[str(cols[i])].calculated = True
-        for i in range(len(nearby)):
-            p = ctx.elements[str(nearby[i])].possibles
-            if val in p:
-                p.remove(val)
-                if(len(p) == 1):
-                    dirty_cells.append(nearby[i])
-                    ctx.elements[str(nearby[i])].calculated = True
-
+        for ary in [rows, cols, nearby]:
+            remove_possibility_from_array(ctx, ary, index)
     
-
-    for i in range(81):
-        ctx.elements[str(i)].update(ctx.elements[str(i)].render_numbers)
-
-    if cell.selected != -1:
-        ctx.elements[str(cell.selected)].remove_class("selected")
-    cell.selected = str(index)
-    ctx.elements[str(cell.selected)].add_class("selected")
-
     if show_highlight:
         for i in range(81):
             ctx.elements[str(i)].remove_class("highlight")
@@ -187,6 +205,7 @@ def calc_possibilities_by_index(ctx, index):
             ctx.elements[str(nearby[i])].add_class("highlight")
         
 def on_numpad_click(ctx,id,value):
+    global selected
     if value == "i":
         global show_indexes
         show_indexes = not show_indexes
@@ -199,16 +218,18 @@ def on_numpad_click(ctx,id,value):
         if not show_highlight:
             for i in range(81):
                 ctx.elements[str(i)].remove_class("highlight")
-        calc_possibilities_by_index(ctx, cell.selected)
+        calc_possibilities_by_index(ctx, selected)
         return
     print(f"numpad {value} clicked")
-    if cell.selected != -1:
-        elm = ctx.elements[str(cell.selected)]
+    if selected != -1:
+        elm = ctx.elements[str(selected)]
         elm.possibles = [int(value)-1]
+        calc_possibilities(ctx,selected)
         elm.update(elm.render_numbers)
-        calc_possibilities(ctx,cell.selected)
         
 def sudoku_solver():
+    global selected
+    selected = -1
     with page("Sudoku Solver") as main:
         with col():
             with row().style("width: 600px; padding: 20px;align-items: end;") as numpad:
