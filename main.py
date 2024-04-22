@@ -1,9 +1,14 @@
 import uix
 from uix.elements import button, page, grid, col, row, text, div
 from uix.pipes import status_pipe
+import json
 uix.html.add_css("sudoku_main","""
-button {
+.dial {
     min-width: 50px;
+}
+.right-menu {
+    padding: 20px;
+    justify-content: start;
 }
 .celltext {
     font-size: 14px;
@@ -29,11 +34,12 @@ button {
 .highlight {
     background-color: #007;
 }
+.page {
+    width: 500px;
+}
 .board {
     display: grid;
-    padding: 20px;
-    width: 500px;
-    height: 600px;
+
     grid-column-start: 1;
     grid-column-end: 1;
     grid-row-start: 1;
@@ -101,7 +107,7 @@ class cell(uix.Element):
                 ctx.elements[f"btn-{i}"].set_attr("disabled",False)
             else:
                 ctx.elements[f"btn-{i}"].set_attr("disabled",True)      
-        calc_possibilities(ctx, self.id)
+        calc_possibilities(ctx, [self.id])
         if selected != -1:
             ctx.elements[str(selected)].remove_class("selected")
         selected = str(id)
@@ -114,10 +120,23 @@ def bigcell(index):
                 cell(id = i + index * 9)
 
 dirty_cells = []
-
-def calc_possibilities(ctx,index):
+def append_dirty_cell(changed_cells):
     global dirty_cells
-    dirty_cells = [index]
+    for i in changed_cells:
+        if i not in dirty_cells:
+            dirty_cells.append(i)
+
+def pop_dirty_cell():
+    global dirty_cells
+    if len(dirty_cells) > 0:
+        return dirty_cells.pop()
+    return -1
+
+def calc_possibilities(ctx,changed_cells: list[int]):
+    global dirty_cells
+    dirty_cells = []
+    append_dirty_cell(changed_cells)
+
     while len(dirty_cells) > 0:
         index = dirty_cells.pop()
         calc_possibilities_by_index(ctx, index)
@@ -224,7 +243,7 @@ def on_numpad_click(ctx,id,value):
     if selected != -1:
         elm = ctx.elements[str(selected)]
         elm.possibles = [int(value)-1]
-        calc_possibilities(ctx,selected)
+        calc_possibilities(ctx,[selected])
         elm.update(elm.render_numbers)
         
 def sudoku_solver():
@@ -232,15 +251,40 @@ def sudoku_solver():
     selected = -1
     with page("Sudoku Solver") as main:
         with col():
-            with row().style("width: 600px; padding: 20px;align-items: end;") as numpad:
+            with row().style("padding: 20px;align-items: end;") as numpad:
                 for i in range(9):
-                    button(f"{i+1}",id=f"btn-{i}").on("click",on_numpad_click)
-                button("i").on("click",on_numpad_click)
-                button("h").on("click",on_numpad_click)
-            with grid(columns="1fr " * 3).cls("board") as board:
-                for i in range(9):
-                    bigcell(i)
+                    button(f"{i+1}",id=f"btn-{i}").on("click",on_numpad_click).cls("dial")
+                button("i").on("click",on_numpad_click).cls("dial")
+                button("h").on("click",on_numpad_click).cls("dial")
+            with row().style("padding: 20px;") as content:
+                with grid(columns="1fr " * 3).cls("board") as board:
+                    for i in range(9):
+                        bigcell(i)
+                with col().cls("right-menu"):
+                    button("Save").on("click",on_save)
+                    button("Load").on("click",on_load)
 
     return main
+
+def on_save(ctx,id,value):
+    data = []
+    for i in range(81):
+        elm = ctx.elements[str(i)]
+        if len(elm.possibles) == 1:
+            data.append({"pos": i, "value": elm.possibles[0]})
+    print(data)
+    with open("sudoku.json","w") as f:
+        f.write(json.dumps(data))
+
+def on_load(ctx,id,value):
+    with open("sudoku.json","r") as f:
+        data = json.loads(f.read())
+        for i in range(81):
+            ctx.elements[str(i)].possibles = pv.copy()
+        for i in data:
+            ctx.elements[str(i["pos"])].possibles = [i["value"]]
+            #ctx.elements[str(i["pos"])].calculated = True
+            ctx.elements[str(i["pos"])].update(ctx.elements[str(i["pos"])].render_numbers)
+        calc_possibilities(ctx, [i["pos"] for i in data])
 
 uix.start(ui = sudoku_solver, config={"debug": True, "port": 5001, "pipes":[status_pipe()]})
